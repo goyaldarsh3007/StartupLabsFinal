@@ -16,6 +16,14 @@ class CustomUser(AbstractUser):
     bio = models.TextField(blank=True)
     is_available = models.BooleanField(default=False)
 
+    @property
+    def is_student(self):
+        return self.role == 'student'
+
+    @property
+    def is_founder(self):
+        return self.role == 'founder'
+
 class Project(models.Model):
     founder = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='projects', null=True, blank=True)
     title = models.CharField(max_length=255)
@@ -38,6 +46,9 @@ class Project(models.Model):
     @owner.setter
     def owner(self, value):
         self.founder = value
+
+    def is_owned_by(self, user):
+        return self.founder == user
 
     def __str__(self):
         return self.title

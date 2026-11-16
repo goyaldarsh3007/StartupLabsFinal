@@ -9,16 +9,19 @@ class UserSerializer(serializers.ModelSerializer):
             'skills', 'confidence_score', 'github_username',
             'college', 'year_of_study', 'bio', 'is_available'
         ]
+        read_only_fields = ['id', 'username']
 
 class ProjectSerializer(serializers.ModelSerializer):
     class Meta:
         model = Project
         fields = '__all__'
+        read_only_fields = ['founder', 'created_at']
 
 class ApplicationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Application
         fields = '__all__'
+        read_only_fields = ['student', 'created_at', 'is_completed_scored']
 
 class FounderApplicationSerializer(serializers.ModelSerializer):
     student_name = serializers.SerializerMethodField()

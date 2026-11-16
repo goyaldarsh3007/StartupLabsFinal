@@ -1421,17 +1421,13 @@
     <!-- JAVASCRIPT LOGIC -->
     <script>
         let projects = [];
-        const talents = [
-            { name: 'Aditi Sharma', college: 'NIFT Delhi', role: 'UI/UX Designer', exp: '1.5 Years', skills: ['Figma', 'Prototyping', 'Branding'], score: 110 },
-            { name: 'Rahul Verma', college: 'IIT Bombay', role: 'Backend Developer', exp: '3 Years', skills: ['Node.js', 'MongoDB', 'AWS'], score: 145 },
-            { name: 'Sneha Patel', college: 'BITS Pilani', role: 'Full Stack Engineer', exp: '2 Years', skills: ['React', 'Django', 'PostgreSQL'], score: 135 }
-        ];
+        let talents = [];
 
         let state = {
             user: null,
             token: localStorage.getItem('access_token') || null,
             bookmarks: JSON.parse(localStorage.getItem('bookmarks') || '[]'),
-            applications: JSON.parse(localStorage.getItem('applications') || '[]'),
+            applications: [],
             currentAiAnalysis: null
         };
         let selectedProjectId = null;
@@ -1574,6 +1570,7 @@
             localStorage.removeItem('refresh_token');
             state.token = null;
             state.user = null;
+            state.applications = [];
             projects = [];
             updateAuthButton();
             renderDashboard();
@@ -2237,60 +2234,8 @@
 
             // Fetch live data from get_available_talent endpoint
             const backendTalents = await fetchAvailableTalent();
-
-            // Curated fallback seed talent to ensure rich display even if database is fresh
-            const seedTalent = [
-                {
-                    id: 991,
-                    full_name: 'Aditi Sharma',
-                    username: 'aditi',
-                    email: 'aditi.sharma@nift.ac.in',
-                    college: 'NIFT Delhi',
-                    year_of_study: 'Final Year',
-                    bio: 'Specializing in design systems, micro-interactions, and conversion-focused startup landing pages. Worked with 2 YC-backed founders on product redesigns.',
-                    confidence_score: 110,
-                    github_username: 'aditisharma-ui',
-                    skills: ['Figma', 'Prototyping', 'Branding', 'TailwindCSS'],
-                    is_available: true
-                },
-                {
-                    id: 992,
-                    full_name: 'Rahul Verma',
-                    username: 'rahul',
-                    email: 'rahul.verma@iitb.ac.in',
-                    college: 'IIT Bombay',
-                    year_of_study: '3rd Year',
-                    bio: 'High-throughput backend engineer. Built distributed caching layers, asynchronous task queues in Celery/Redis, and REST APIs handling 5k+ requests/sec.',
-                    confidence_score: 145,
-                    github_username: 'rahulverma-dev',
-                    skills: ['Python', 'Node.js', 'Django', 'PostgreSQL', 'AWS'],
-                    is_available: true
-                },
-                {
-                    id: 993,
-                    full_name: 'Sneha Patel',
-                    username: 'sneha',
-                    email: 'sneha.patel@pilani.bits-pilani.ac.in',
-                    college: 'BITS Pilani',
-                    year_of_study: 'Final Year',
-                    bio: 'Full-stack builder passionate about early-stage startup execution. Winner of 3 national hackathons with experience across React, Next.js, and Django.',
-                    confidence_score: 135,
-                    github_username: 'snehapatel-eng',
-                    skills: ['React', 'TypeScript', 'Django', 'Next.js', 'GraphQL'],
-                    is_available: true
-                }
-            ];
-
-            // Merge backend talent with fallback talent (deduplicating by username or email)
-            const combined = [...backendTalents];
-            seedTalent.forEach(seed => {
-                if (!combined.some(s => (s.email && s.email === seed.email) || (s.username && s.username === seed.username))) {
-                    combined.push(seed);
-                }
-            });
-
-            availableTalentList = combined;
-            window.availableTalentData = combined;
+            availableTalentList = Array.isArray(backendTalents) ? backendTalents : [];
+            window.availableTalentData = availableTalentList;
 
             const searchInput = document.getElementById('talentSearch');
             const searchQuery = (query || (searchInput ? searchInput.value : '')).toLowerCase().trim();
@@ -2561,8 +2506,26 @@
         }
         window.toggleAvailability = toggleAvailability;
 
+        async function loadStudentApplications() {
+            if (!state.token || !state.user || state.user.role !== 'student') {
+                state.applications = [];
+                return [];
+            }
+            try {
+                const res = await apiRequest('/api/student/applications/', 'GET', null, true);
+                if (res.ok && Array.isArray(res.data)) {
+                    state.applications = res.data;
+                    return res.data;
+                }
+            } catch (err) {
+                console.error("Failed to load student applications:", err);
+            }
+            return state.applications;
+        }
+        window.loadStudentApplications = loadStudentApplications;
+
         // --- DASHBOARD RENDERING & FORKING ---
-        function renderDashboard() {
+        async function renderDashboard() {
             const container = document.getElementById('dashboardContent') || document.getElementById('dashboard');
             if (!container) return;
 
@@ -2574,6 +2537,7 @@
             if (state.user.role === 'founder') {
                 renderFounderDashboard(container);
             } else {
+                await loadStudentApplications();
                 renderStudentDashboard(container);
             }
         }
@@ -3493,37 +3457,25 @@
                 showMessage('Please sign in to apply for projects.', true);
                 return;
             }
+            if (state.user.role !== 'student') {
+                showMessage('Only students can apply to projects.', true);
+                closeModal('projectModal');
+                return;
+            }
             const p = projects.find(item => item.id === selectedProjectId);
             if (!p) return;
 
             try {
                 const res = await apiRequest('/api/applications/apply/', 'POST', { project_id: p.id }, true);
                 if (res.ok) {
-                    if (!state.applications.some(a => a.projectId === p.id)) {
-                        state.applications.push({
-                            projectId: p.id,
-                            projectTitle: p.title,
-                            company: p.company,
-                            status: 'pending'
-                        });
-                        localStorage.setItem('applications', JSON.stringify(state.applications));
-                    }
+                    await loadStudentApplications();
                     showMessage(`Successfully applied for "${p.title}"!`, false);
                 } else {
                     const err = (res.data && res.data.error) ? res.data.error : 'Failed to submit application.';
                     showMessage(err, true);
                 }
             } catch (err) {
-                if (!state.applications.some(a => a.projectId === p.id)) {
-                    state.applications.push({
-                        projectId: p.id,
-                        projectTitle: p.title,
-                        company: p.company,
-                        status: 'pending'
-                    });
-                    localStorage.setItem('applications', JSON.stringify(state.applications));
-                }
-                showMessage(`Successfully applied for "${p.title}"!`, false);
+                showMessage('Network error while submitting application.', true);
             }
             closeModal('projectModal');
             renderDashboard();
